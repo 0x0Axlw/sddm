@@ -25,6 +25,7 @@ Rectangle {
     Component.onCompleted: {
         if (typeof userModel !== "undefined" && userModel.lastIndex >= 0) userIndex = userModel.lastIndex;
         if (typeof sessionModel !== "undefined" && sessionModel.lastIndex >= 0) sessionIndex = sessionModel.lastIndex;
+        updateUserAvatar();
     }
 
     function cleanName(name) {
@@ -37,44 +38,53 @@ Rectangle {
         return s.charAt(0).toUpperCase() + s.slice(1);
     }
 
-    function doLogin() {
-        if (!loginState.visible || isLoggingIn) return;
-
-        var user = "";
+    // The login username: SDDM's userModel EditRole is the account login name
+    // (UserRole+1 NameRole is the same; DisplayRole is the display name and
+    // must never be submitted). Falls back to SDDM's last logged-in user.
+    function selectedLoginName() {
         if (typeof userModel !== "undefined" && userModel.count > 0) {
-            var idx = container.userIndex;
-            if (idx < 0 || idx >= userModel.count) idx = 0;
-
-            var edit = userModel.data(userModel.index(idx, 0), Qt.EditRole);
-            var nameRole = userModel.data(userModel.index(idx, 0), Qt.UserRole + 1);
-            var display = userModel.data(userModel.index(idx, 0), Qt.DisplayRole);
-
-            user = edit ? edit.toString() : (nameRole ? nameRole.toString() : (display ? display.toString() : ""));
+            var idx = Math.max(0, Math.min(container.userIndex, userModel.count - 1));
+            var mIdx = userModel.index(idx, 0);
+            var edit = userModel.data(mIdx, Qt.EditRole);
+            var nameRole = userModel.data(mIdx, Qt.UserRole + 1);
+            return (edit ? edit.toString() : (nameRole ? nameRole.toString() : ""));
         }
+        return (sddm && sddm.lastUser && sddm.lastUser.length > 0) ? sddm.lastUser.toString() : "";
+    }
 
-        if (!user || user === "" || user === "User") {
-            user = sddm.lastUser;
-        }
-
-        if (!user && typeof userModel !== "undefined" && userModel.count > 0) {
-            var firstEdit = userModel.data(userModel.index(0, 0), Qt.EditRole);
-            user = firstEdit ? firstEdit.toString() : "";
-        }
-
-        if (!user) return;
-
-        container.isLoggingIn = true;
-        var pass = passwordField.text;
+    // Clamp helper so popups/dropdowns and the submit path agree.
+    function validSessionIndex() {
         var sess = container.sessionIndex;
-
-        if (typeof sessionModel !== "undefined") {
+        if (typeof sessionModel !== "undefined" && sessionModel.count > 0) {
             if (sess < 0 || sess >= sessionModel.count) sess = 0;
         } else {
-            sess = 0;
+            sess = 0; // model missing or empty: submit the default session
+        }
+        return sess;
+    }
+
+    function doLogin() {
+        if (!loginState.visible || container.isLoggingIn) return;
+
+        var user = selectedLoginName();
+        // No usable identity (no users and no lastUser) - never guess.
+        if (!user || user.length === 0) {
+            console.log("Pixie SDDM: no valid user available; suppressing login.");
+            return;
         }
 
-        console.log("Pixie SDDM: Attempting login for user [" + user + "] session index [" + sess + "]");
-        sddm.login(user.trim(), pass, sess);
+        var pass = passwordField.text;
+        if (!pass || pass.length === 0) {
+            // Clear feedback instead of a doomed SDDM round-trip.
+            loginState.showErrorHint("Please enter your password");
+            return;
+        }
+
+        container.isLoggingIn = true;
+        var sess = validSessionIndex();
+
+        console.log("Pixie SDDM: Attempting login for the selected user, session index [" + sess + "]");
+        sddm.login(user, pass, sess);
         loginTimeout.start();
     }
 
@@ -89,8 +99,7 @@ Rectangle {
         function onLoginFailed() {
             container.isLoggingIn = false
             loginTimeout.stop()
-            loginState.isError = true
-            shakeAnimation.start()
+            loginState.showErrorHint("Incorrect password. Try again.")
             passwordField.text = ""
             passwordField.forceActiveFocus()
         }
@@ -98,6 +107,31 @@ Rectangle {
             loginTimeout.stop()
         }
     }
+
+    // Keep the avatar in sync with the selected user: prefer SDDM's per-user
+    // icon (UserRole+3 IconRole); the bundled image is only a fallback.
+    function selectedUserIcon() {
+        if (typeof userModel !== "undefined" && userModel.count > 0) {
+            var idx = Math.max(0, Math.min(container.userIndex, userModel.count - 1));
+            var icon = userModel.data(userModel.index(idx, 0), Qt.UserRole + 3);
+            if (icon && /\.(jpg|jpeg|png|bmp|webp|svg)$/i.test(icon.toString())) {
+                return icon.toString();
+            }
+        }
+        return "assets/avatar.jpg";
+    }
+
+    function updateUserAvatar() {
+        var s = selectedUserIcon();
+        if (avatar.source.toString() !== Qt.resolvedUrl(s).toString()) {
+            avatar.source = s;
+            avatarCanvas.requestPaint();
+        } else {
+            avatarCanvas.requestPaint();
+        }
+    }
+
+    onUserIndexChanged: updateUserAvatar()
 
     // Wallpaper & palette resolution:
     //   1. "wallpaper" key  - synced desktop wallpaper (scripts/update-wallpaper.sh)
@@ -293,13 +327,15 @@ Rectangle {
     }
 
     PowerBar {
+        // Bottom-right corner, responsive margins (no fixed screen offsets,
+        // clears the centered hint by design and scales on short screens).
         anchors {
-            top: parent.top
+            bottom: parent.bottom
             right: parent.right
-            topMargin: 30
-            rightMargin: 40
+            bottomMargin: Math.max(m3.barMinEdge, Math.min(parent.width, parent.height) * m3.barEdgeFactor)
+            rightMargin: Math.max(m3.barMinEdge, Math.min(parent.width, parent.height) * m3.barEdgeFactor)
         }
-        textColor: container.extractedAccent
+        textColor: container.textColor
         z: 100
         opacity: container.uiReady ? 1 : 0
         Behavior on opacity { NumberAnimation { duration: 300 } }
@@ -307,7 +343,8 @@ Rectangle {
 
     Shortcut {
         sequence: "Escape"
-        enabled: loginState.visible
+        // Modal popups handle Escape themselves (CloseOnEscape).
+        enabled: loginState.visible && !userPopup.opened && !sessionPopup.opened
         onActivated: {
             loginState.visible = false;
             loginState.isError = false;
@@ -318,7 +355,9 @@ Rectangle {
 
     Shortcut {
         sequences: ["Return", "Enter"]
-        enabled: loginState.visible
+        // No submission while a modal popup has the interaction; the popup's
+        // own Return/Enter handlers just pick the row and close.
+        enabled: loginState.visible && !userPopup.opened && !sessionPopup.opened
         onActivated: container.doLogin()
     }
 
@@ -375,6 +414,7 @@ Rectangle {
 
     Item {
         id: loginState
+        objectName: "loginState"        // harness/test hook
         anchors.fill: parent
         visible: false
         opacity: visible ? 1 : 0
@@ -386,6 +426,14 @@ Rectangle {
         }
 
         property bool isError: false
+        // M3 supporting text under the field; empty when not in an error.
+        property string errorHint: ""
+        function showErrorHint(msg) {
+            errorHint = msg;
+            isError = true;
+            shakeAnimation.start();
+        }
+
         SequentialAnimation {
             id: shakeAnimation
             loops: 2
@@ -394,7 +442,10 @@ Rectangle {
             PropertyAnimation { target: loginFloat; property: "anchors.horizontalCenterOffset"; from: 0; to: -10; duration: 50; easing.type: Easing.InOutQuad }
             PropertyAnimation { target: loginFloat; property: "anchors.horizontalCenterOffset"; from: -10; to: 10; duration: 50; easing.type: Easing.InOutQuad }
             PropertyAnimation { target: loginFloat; property: "anchors.horizontalCenterOffset"; from: 10; to: 0; duration: 50; easing.type: Easing.InOutQuad }
-            onStopped: loginState.isError = false
+            onStopped: {
+                loginState.isError = false;
+                loginState.errorHint = "";
+            }
         }
 
         // Floating login composition: no giant card. The wallpaper is already
@@ -553,6 +604,10 @@ Rectangle {
                     MouseArea {
                         id: userClickArea
                         anchors.fill: parent
+                        // Useless for single-user systems - only multi-user
+                        // sessions get a selector.
+                        enabled: typeof userModel !== "undefined" && userModel.count > 1
+                        cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
                         onClicked: userPopup.open()
                     }
 
@@ -610,13 +665,18 @@ Rectangle {
 
                 TextField {
                     id: passwordField
+                    objectName: "passwordField"     // harness/test hook
                     Layout.topMargin: m3.spaceXL // Keeps space above it static
                     // Responsive width, clamped - never full-bleed, never cramped.
                     Layout.preferredWidth: Math.max(m3.typeNormal * 20, Math.min(420, container.width * 0.22))
+                    Layout.preferredHeight: Math.max(m3.fieldMinHeight, m3.typeLarger + m3.fieldBlockPadding * 2)
                     echoMode: TextInput.Password
+                    passwordCharacter: "•"
                     horizontalAlignment: Text.AlignHCenter
                     font.pixelSize: m3.typeLarger
+                    font.family: container.activeFontRegular
                     color: container.textColor
+                    selectionColor: container.extractedAccent
                     focus: loginState.visible
                     enabled: !container.isLoggingIn
 
@@ -624,26 +684,53 @@ Rectangle {
                         // Translucent filled M3 field over the blurred wallpaper.
                         color: Qt.rgba(surfaceColor.r, surfaceColor.g, surfaceColor.b, 0.6)
                         radius: passwordField.height / 2
-                        border.width: passwordField.activeFocus || loginState.isError ? 2 : 1
+                        // Constant width: focus/error changes re-color only, so
+                        // the field never resizes or shifts.
+                        border.width: m3.fieldBorderWidth
                         border.color: {
                             if (loginState.isError) return m3.errorColor;
                             if (passwordField.activeFocus) return container.extractedAccent;
-                            return surfaceVariantColor;
+                            return container.mixColors(surfaceVariantColor, container.baseColor, 0.2);
                         }
                         opacity: passwordField.enabled ? 1.0 : 0.5
                         Behavior on border.color { ColorAnimation { duration: m3.durationFast } }
                     }
 
+                    // Custom placeholder: deterministic rendering (the native
+                    // placeholderText fights Qt6 internals with custom fonts),
+                    // colored as the M3 "onSurface ~38%" supporting role.
                     Text {
-                        text: "Enter Password"
-                        color: container.textColor
+                        text: "Password"
+                        color: container.mixColors(container.textColor, container.baseColor, 0.45)
                         font.pixelSize: m3.typeNormal
-                        visible: !parent.text
-                        anchors.centerIn: parent
-                        opacity: 0.5
+                        font.family: container.activeFontRegular
+                        anchors.horizontalCenter: parent.horizontalCenter
+                        anchors.verticalCenter: parent.verticalCenter
+                        visible: !passwordField.text && !loginState.isError
                     }
 
+                    // Clear the error as soon as the user starts retyping.
+                    onTextEdited: if (loginState.isError) { loginState.isError = false; loginState.errorHint = ""; }
+
                     onAccepted: container.doLogin()
+                }
+
+                Text {
+                    id: fieldErrorHint
+                    // Reserved slot height: the composition never shifts when
+                    // the error state appears or disappears.
+                    Layout.preferredWidth: passwordField.width
+                    Layout.preferredHeight: m3.typeSmaller * 1.6
+                    Layout.alignment: Qt.AlignHCenter
+                    Layout.topMargin: 0
+                    text: loginState.errorHint
+                    visible: loginState.isError
+                    color: m3.errorColor
+                    font.pixelSize: m3.typeSmaller
+                    font.family: container.activeFontRegular
+                    horizontalAlignment: Text.AlignHCenter
+                    opacity: loginState.isError ? 1 : 0
+                    Behavior on opacity { NumberAnimation { duration: m3.durationFast } }
                 }
 
                 Text {
@@ -693,6 +780,7 @@ Rectangle {
                         // Accessible contrast against the Matugen accent fill.
                         color: container.onAccentColor
                         font.pixelSize: m3.controlFabSize * 0.42
+                        font.family: container.activeFontBold
                         horizontalAlignment: Text.AlignHCenter
                         verticalAlignment: Text.AlignVCenter
                     }
@@ -715,6 +803,12 @@ Rectangle {
                     onClicked: {
                         container.doLogin();
                     }
+
+                    // Keyboard path is Enter (global shortcuts); still expose
+                    // the action to accessibility frameworks.
+                    Accessible.role: Accessible.Button
+                    Accessible.name: "Log in"
+                    Accessible.onPressAction: container.doLogin()
                 }
             }
         }

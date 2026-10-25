@@ -64,6 +64,18 @@ QtObject {
     readonly property real clockMaxSize: 260
     readonly property real clockShiftFactor: 0.22    // offset above vertical center × height
 
+    // --- Bottom status/power bar ---
+    readonly property int barIconSize: 20
+    readonly property int barTouchSize: 40          // inclusive hit target
+    readonly property real barEdgeFactor: 0.035     // distance to bottom/right edges × min(w,h)
+    readonly property int barMinEdge: 12            // floor for tiny windows
+
+    // --- Password field (M3 filled-field metrics) ---
+    readonly property int fieldBlockPadding: 12     // vertical content inset
+    readonly property int fieldInlinePadding: 24    // horizontal content inset
+    readonly property real fieldBorderWidth: 2      // constant: no state-driven resize
+    readonly property real fieldMinHeight: 48
+
     // --- Avatar composition (relative to the screen) ---
     readonly property real avatarMinSize: 96
     readonly property real avatarMaxSize: 140
