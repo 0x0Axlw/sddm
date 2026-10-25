@@ -129,6 +129,11 @@ Rectangle {
     property color textColor: matugenActive ? (config.matugenText && config.matugenText.length > 0 ? config.matugenText : config.textColor) : config.textColor
     property color surfaceColor: Qt.lighter(baseColor, 1.3)
     property color surfaceVariantColor: Qt.lighter(baseColor, 1.6)
+    // Contrast-based roles for M3 widgets on top of the active palette.
+    function lumaOf(c) { return 0.299 * c.r + 0.587 * c.g + 0.114 * c.b; }
+    property color onAccentColor: lumaOf(extractedAccent) > 0.6 ? "#101418" : "#FFFFFF"
+    property color accentHoverColor: Qt.lighter(extractedAccent, 1.08)
+    property color accentPressedColor: Qt.darker(extractedAccent, 1.15)
     property bool uiReady: matugenActive || config.autoColor !== "true" || colorExtractor.processed
 
     Timer {
@@ -283,8 +288,8 @@ Rectangle {
     Rectangle {
         anchors.fill: parent
         color: "black"
-        opacity: loginState.visible ? 0.6 : 0.4
-        Behavior on opacity { NumberAnimation { duration: 400 } }
+        opacity: 0.4
+        Behavior on opacity { NumberAnimation { duration: m3.durationLarge } }
     }
 
     PowerBar {
@@ -384,39 +389,27 @@ Rectangle {
         SequentialAnimation {
             id: shakeAnimation
             loops: 2
-            PropertyAnimation { target: loginCard; property: "x"; from: (container.width - loginCard.width)/2; to: (container.width - loginCard.width)/2 - 10; duration: 50; easing.type: Easing.InOutQuad }
-            PropertyAnimation { target: loginCard; property: "x"; from: (container.width - loginCard.width)/2 - 10; to: (container.width - loginCard.width)/2 + 10; duration: 50; easing.type: Easing.InOutQuad }
-            PropertyAnimation { target: loginCard; property: "x"; from: (container.width - loginCard.width)/2 + 10; to: (container.width - loginCard.width)/2; duration: 50; easing.type: Easing.InOutQuad }
-            onStopped: isError = false
+            // Shake the floating login composition (anchor-offset shake keeps
+            // the center binding intact).
+            PropertyAnimation { target: loginFloat; property: "anchors.horizontalCenterOffset"; from: 0; to: -10; duration: 50; easing.type: Easing.InOutQuad }
+            PropertyAnimation { target: loginFloat; property: "anchors.horizontalCenterOffset"; from: -10; to: 10; duration: 50; easing.type: Easing.InOutQuad }
+            PropertyAnimation { target: loginFloat; property: "anchors.horizontalCenterOffset"; from: 10; to: 0; duration: 50; easing.type: Easing.InOutQuad }
+            onStopped: loginState.isError = false
         }
 
-        Rectangle {
-            id: loginCard
-            // Responsive: grows with the screen, clamped to stay card-like.
-            width: Math.max(320, Math.min(420, parent.width * 0.28))
-            // Height derived from the content, animated on overflow (NumLock text).
-            height: Math.min(parent.height * 0.9, cardColumn.implicitHeight + m3.spaceXXL * 2)
-            x: (parent.width - width) / 2
-            y: (parent.height - height) / 2
-            color: loginState.isError ? "#442222" : baseColor
-            opacity: 0.7
-            radius: m3.radiusVeryLarge
-
-            Behavior on color { ColorAnimation { duration: m3.durationNormal } }
-            // Beautiful MD3 bounce/jiggle animation when card resizes
-            Behavior on height { NumberAnimation { duration: 300; easing.type: Easing.InOutQuad } }
-            // Also animate Y position so it stays perfectly centered when height changes
-            Behavior on y { NumberAnimation { duration: 300; easing.type: Easing.OutBack } }
-
-            ColumnLayout {
-                id: cardColumn
-                anchors.fill: parent
-                anchors.margins: m3.spaceXXL
-                spacing: m3.spaceL
+        // Floating login composition: no giant card. The wallpaper is already
+        // blurred by backgroundBlur; controls sit directly on it, M3-style.
+        ColumnLayout {
+            id: loginFloat
+            anchors {
+                horizontalCenter: parent.horizontalCenter
+                verticalCenter: parent.verticalCenter
+            }
+            spacing: m3.spaceL
 
                 Item {
-                    // Avatar scales with the card, clamped for tiny/huge screens.
-                    readonly property real diameter: Math.max(m3.avatarMinSize, Math.min(m3.avatarMaxSize, loginCard.width * m3.avatarCardFactor))
+                    // Avatar scales with the screen, clamped for tiny/huge displays.
+                    readonly property real diameter: Math.max(m3.avatarMinSize, Math.min(m3.avatarMaxSize, container.width * m3.avatarScreenFactor))
                     Layout.preferredWidth: diameter
                     Layout.preferredHeight: diameter
                     Layout.alignment: Qt.AlignHCenter
@@ -618,8 +611,9 @@ Rectangle {
                 TextField {
                     id: passwordField
                     Layout.topMargin: m3.spaceXL // Keeps space above it static
+                    // Responsive width, clamped - never full-bleed, never cramped.
+                    Layout.preferredWidth: Math.max(m3.typeNormal * 20, Math.min(420, container.width * 0.22))
                     echoMode: TextInput.Password
-                    Layout.fillWidth: true
                     horizontalAlignment: Text.AlignHCenter
                     font.pixelSize: m3.typeLarger
                     color: container.textColor
@@ -627,11 +621,17 @@ Rectangle {
                     enabled: !container.isLoggingIn
 
                     background: Rectangle {
-                        color: surfaceColor
-                        radius: m3.radiusNormal
-                        border.width: parent.activeFocus ? 2 : 0
-                        border.color: container.extractedAccent
-                        opacity: parent.enabled ? 1.0 : 0.5
+                        // Translucent filled M3 field over the blurred wallpaper.
+                        color: Qt.rgba(surfaceColor.r, surfaceColor.g, surfaceColor.b, 0.6)
+                        radius: passwordField.height / 2
+                        border.width: passwordField.activeFocus || loginState.isError ? 2 : 1
+                        border.color: {
+                            if (loginState.isError) return m3.errorColor;
+                            if (passwordField.activeFocus) return container.extractedAccent;
+                            return surfaceVariantColor;
+                        }
+                        opacity: passwordField.enabled ? 1.0 : 0.5
+                        Behavior on border.color { ColorAnimation { duration: m3.durationFast } }
                     }
 
                     Text {
@@ -662,34 +662,60 @@ Rectangle {
                     Behavior on opacity { NumberAnimation { duration: m3.durationNormal } }
                 }
 
-                RoundButton {
-                    id: loginButton
+                // M3 FAB with a restrained elevation shadow (MultiEffect).
+                Item {
+                    readonly property real fabSize: m3.controlFabSize
+                    Layout.preferredWidth: fabSize
+                    Layout.preferredHeight: fabSize
                     Layout.alignment: Qt.AlignHCenter
-                    Layout.preferredWidth: m3.controlFabSize
-                    Layout.preferredHeight: m3.controlFabSize
-                    focusPolicy: Qt.NoFocus
-                    enabled: !container.isLoggingIn
+                    Layout.topMargin: m3.spaceS
+
+                    MultiEffect {
+                        anchors.fill: parent
+                        anchors.margins: -m3.spaceM
+                        source: loginButton
+                        shadowEnabled: true
+                        shadowColor: "#33000000"
+                        shadowVerticalOffset: 2.0
+                        autoPaddingEnabled: false
+                        shadowBlur: 0.35
+                    }
+
+                    RoundButton {
+                        id: loginButton
+                        anchors.fill: parent
+                        hoverEnabled: true
+                        focusPolicy: Qt.NoFocus
+                        enabled: !container.isLoggingIn
 
                     contentItem: Text {
                         text: container.isLoggingIn ? "⋯" : "→"
-                        color: container.textColor
-                        font.pixelSize: m3.typeHuge + m3.spaceXL
+                        // Accessible contrast against the Matugen accent fill.
+                        color: container.onAccentColor
+                        font.pixelSize: m3.controlFabSize * 0.42
                         horizontalAlignment: Text.AlignHCenter
                         verticalAlignment: Text.AlignVCenter
                     }
 
                     background: Rectangle {
-                        color: container.isLoggingIn ? surfaceVariantColor : (loginButton.pressed ? Qt.darker(container.extractedAccent, 1.1) : container.extractedAccent)
-                        radius: m3.controlFabSize / 2
+                        // Material 3 filled FAB: the Matugen accent, never hardcoded.
+                        color: {
+                            if (container.isLoggingIn) return surfaceVariantColor;
+                            if (loginButton.pressed) return container.accentPressedColor;
+                            if (loginButton.hovered) return container.accentHoverColor;
+                            return container.extractedAccent;
+                        }
+                        radius: width / 2
                         opacity: container.isLoggingIn ? 0.5 : 1.0
+                        Behavior on color { ColorAnimation { duration: m3.durationFast } }
+                        scale: loginButton.pressed ? 0.94 : 1.0
+                        Behavior on scale { NumberAnimation { duration: m3.durationFast; easing.type: Easing.OutQuad } }
                     }
 
                     onClicked: {
                         container.doLogin();
                     }
                 }
-
-                Item { Layout.fillHeight: true } // ADD THIS LINE HERE AT THE BOTTOM
             }
         }
     }

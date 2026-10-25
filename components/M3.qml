@@ -64,9 +64,12 @@ QtObject {
     readonly property real clockMaxSize: 260
     readonly property real clockShiftFactor: 0.22    // offset above vertical center × height
 
-    // --- Avatar composition (relative to the login card) ---
+    // --- Avatar composition (relative to the screen) ---
     readonly property real avatarMinSize: 96
     readonly property real avatarMaxSize: 140
-    readonly property real avatarCardFactor: 0.3     // diameter × card width
+    readonly property real avatarScreenFactor: 0.075  // diameter × screen width
     readonly property real avatarEdgeTrim: 1.08      // zoom that shaves airy image borders
+
+    // --- Error state (M3 error role) ---
+    readonly property color errorColor: "#FFB4AB"
 }
