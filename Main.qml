@@ -317,20 +317,15 @@ Rectangle {
         onActivated: container.doLogin()
     }
 
-    Text {
-        id: dateText
-        text: Qt.formatDateTime(new Date(), "dddd, MMMM d")
-        color: container.extractedAccent
-        font.pixelSize: 22
-        font.family: activeFontRegular
-        anchors {
-            top: parent.top
-            left: parent.left
-            topMargin: 50
-            leftMargin: 60
-        }
-        opacity: container.uiReady ? 1 : 0
-        Behavior on opacity { NumberAnimation { duration: 300 } }
+    // Design tokens (materials from the end-4 style shell, see components/M3.qml)
+    M3 { id: m3 }
+
+    // Softened text for secondary composition (mix toward the background).
+    function mixColors(c1, c2, t) {
+        return Qt.rgba(c1.r + (c2.r - c1.r) * t,
+                       c1.g + (c2.g - c1.g) * t,
+                       c1.b + (c2.b - c1.b) * t,
+                       c1.a);
     }
 
     Item {
@@ -338,22 +333,24 @@ Rectangle {
         anchors.fill: parent
         visible: !loginState.visible
         opacity: visible ? 1 : 0
-        Behavior on opacity { NumberAnimation { duration: 400 } }
+        Behavior on opacity { NumberAnimation { duration: m3.durationLarge } }
 
+        // Horizontal Pixel-style clock above center with its date below.
         Clock {
             id: mainClock
-            anchors.centerIn: parent
-            backgroundSource: config.background
+            anchors.fill: parent
             baseAccent: container.extractedAccent
             fontFamily: container.activeFontRegular
+            dateText: Qt.formatDateTime(mainClock.now, "dddd, MMMM d")
+            dateColor: mixColors(container.textColor, container.baseColor, 0.3)
             opacity: container.uiReady ? 1 : 0
-            Behavior on opacity { NumberAnimation { duration: 300 } }
+            Behavior on opacity { NumberAnimation { duration: m3.durationNormal } }
         }
 
         Text {
             text: "Press any key to unlock"
             color: container.textColor
-            font.pixelSize: 16
+            font.pixelSize: m3.typeNormal
             anchors {
                 bottom: parent.bottom
                 horizontalCenter: parent.horizontalCenter
@@ -395,29 +392,33 @@ Rectangle {
 
         Rectangle {
             id: loginCard
-            width: 380
-            // Dynamic height: Expands smoothly when NumLock text appears
-            height: 480 + (numLockIndicator.visible ? 40 : 0)
+            // Responsive: grows with the screen, clamped to stay card-like.
+            width: Math.max(320, Math.min(420, parent.width * 0.28))
+            // Height derived from the content, animated on overflow (NumLock text).
+            height: Math.min(parent.height * 0.9, cardColumn.implicitHeight + m3.spaceXXL * 2)
             x: (parent.width - width) / 2
-            y: (parent.height - 480) / 2
+            y: (parent.height - height) / 2
             color: loginState.isError ? "#442222" : baseColor
             opacity: 0.7
-            radius: 32
+            radius: m3.radiusVeryLarge
 
-            Behavior on color { ColorAnimation { duration: 200 } }
+            Behavior on color { ColorAnimation { duration: m3.durationNormal } }
             // Beautiful MD3 bounce/jiggle animation when card resizes
             Behavior on height { NumberAnimation { duration: 300; easing.type: Easing.InOutQuad } }
             // Also animate Y position so it stays perfectly centered when height changes
             Behavior on y { NumberAnimation { duration: 300; easing.type: Easing.OutBack } }
 
             ColumnLayout {
+                id: cardColumn
                 anchors.fill: parent
-                anchors.margins: 40
-                spacing: 15
+                anchors.margins: m3.spaceXXL
+                spacing: m3.spaceL
 
                 Item {
-                    Layout.preferredWidth: 120
-                    Layout.preferredHeight: 120
+                    // Avatar scales with the card, clamped for tiny/huge screens.
+                    readonly property real diameter: Math.max(m3.avatarMinSize, Math.min(m3.avatarMaxSize, loginCard.width * m3.avatarCardFactor))
+                    Layout.preferredWidth: diameter
+                    Layout.preferredHeight: diameter
                     Layout.alignment: Qt.AlignHCenter
 
                     Rectangle {
@@ -448,20 +449,42 @@ Rectangle {
                     }
 
                     // Bulletproof Circular Avatar (Canvas method)
+                    // Aspect-fill center crop (no distortion for non-square
+                    // icons) with a subtle edge-trim zoom so images with airy
+                    // content borders still fill the circle edge-to-edge.
                     Canvas {
                         id: avatarCanvas
                         anchors.fill: parent
                         visible: avatar.status === Image.Ready
 
+                        onWidthChanged: requestPaint()
+                        onHeightChanged: requestPaint()
+
                         onPaint: {
+                            if (avatar.status !== Image.Ready) return;
                             var ctx = getContext("2d");
                             ctx.reset();
+                            var iw = avatar.implicitWidth;
+                            var ih = avatar.implicitHeight;
+                            if (iw <= 0 || ih <= 0) { iw = width; ih = height; }
+                            // Center-crop a square region of the source
+                            var side = Math.min(iw, ih);
+                            var sx = (iw - side) / 2;
+                            var sy = (ih - side) / 2;
+                            var sw = side;
+                            var sh = side;
+                            // Edge trim: shrink the source rect toward the center
+                            var zoom = m3.avatarEdgeTrim;
+                            var inset = side * (1 - 1 / zoom) / 2;
+                            sx += inset;
+                            sy += inset;
+                            sw -= inset * 2;
+                            sh -= inset * 2;
                             ctx.beginPath();
                             ctx.arc(width/2, height/2, width/2, 0, 2 * Math.PI);
                             ctx.closePath();
                             ctx.clip();
-                            ctx.drawImage(avatar, 0, 0, width, height);
-                            console.log("Pixie SDDM: Canvas draw complete.");
+                            ctx.drawImage(avatar, sx, sy, sw, sh, 0, 0, width, height);
                         }
 
                         Timer {
@@ -500,15 +523,15 @@ Rectangle {
 
                 Item {
                     Layout.alignment: Qt.AlignHCenter
-                    Layout.preferredWidth: userNameLabel.width + 40
-                    Layout.preferredHeight: userNameLabel.height + 20
-                    Layout.topMargin: 10
+                    Layout.preferredWidth: userNameLabel.width + m3.spaceXXL
+                    Layout.preferredHeight: userNameLabel.height + m3.spaceL
+                    Layout.topMargin: m3.spaceXS
 
                     Rectangle {
                         anchors.fill: parent
                         color: "white"
                         opacity: userClickArea.pressed ? 0.2 : 0
-                        radius: 12
+                        radius: m3.radiusSmall
                         Behavior on opacity { NumberAnimation { duration: 100 } }
                     }
 
@@ -529,7 +552,7 @@ Rectangle {
                             return cleanName(sddm.lastUser ? sddm.lastUser : "User");
                         }
                         color: container.textColor
-                        font.pixelSize: 24
+                        font.pixelSize: m3.typeTitle
                         font.weight: Font.Bold
                         font.family: activeFontRegular
                     }
@@ -548,10 +571,10 @@ Rectangle {
                     id: sessionPill
                     visible: typeof sessionModel !== "undefined" && sessionModel.count > 1
                     Layout.alignment: Qt.AlignHCenter
-                    Layout.preferredWidth: 180
-                    Layout.preferredHeight: 36
+                    Layout.preferredWidth: m3.controlPillWidth + m3.spaceXL
+                    Layout.preferredHeight: m3.controlPillHeight
                     color: (sessionClickArea.pressed || sessionPopup.opened) ? surfaceVariantColor : surfaceColor
-                    radius: 18
+                    radius: m3.radiusNormal
                     border.width: 1
                     border.color: (sessionClickArea.pressed || sessionPopup.opened) ? container.extractedAccent : surfaceVariantColor
 
@@ -564,7 +587,7 @@ Rectangle {
                         Text {
                             text: "󰟀"
                             color: container.extractedAccent
-                            font.pixelSize: 16
+                            font.pixelSize: m3.typeNormal
                         }
                         Text {
                             text: {
@@ -580,7 +603,7 @@ Rectangle {
                                 return "Hyprland";
                             }
                             color: container.textColor
-                            font.pixelSize: 13
+                            font.pixelSize: m3.typeSmaller + 1
                             font.weight: Font.Medium
                         }
                     }
@@ -594,18 +617,18 @@ Rectangle {
 
                 TextField {
                     id: passwordField
-                    Layout.topMargin: 30 // Keeps space above it static
+                    Layout.topMargin: m3.spaceXL // Keeps space above it static
                     echoMode: TextInput.Password
                     Layout.fillWidth: true
                     horizontalAlignment: Text.AlignHCenter
-                    font.pixelSize: 18
+                    font.pixelSize: m3.typeLarger
                     color: container.textColor
                     focus: loginState.visible
                     enabled: !container.isLoggingIn
 
                     background: Rectangle {
                         color: surfaceColor
-                        radius: 16
+                        radius: m3.radiusNormal
                         border.width: parent.activeFocus ? 2 : 0
                         border.color: container.extractedAccent
                         opacity: parent.enabled ? 1.0 : 0.5
@@ -614,7 +637,7 @@ Rectangle {
                     Text {
                         text: "Enter Password"
                         color: container.textColor
-                        font.pixelSize: 16
+                        font.pixelSize: m3.typeNormal
                         visible: !parent.text
                         anchors.centerIn: parent
                         opacity: 0.5
@@ -627,7 +650,7 @@ Rectangle {
                     id: numLockIndicator
                     text: "Num Lock is on"
                     color: container.extractedAccent
-                    font.pixelSize: 14
+                    font.pixelSize: m3.typeSmall
                     font.family: activeFontRegular
                     font.weight: Font.Medium
                     Layout.alignment: Qt.AlignHCenter
@@ -636,28 +659,28 @@ Rectangle {
                         return false;
                     }
                     opacity: visible ? 1 : 0
-                    Behavior on opacity { NumberAnimation { duration: 200 } }
+                    Behavior on opacity { NumberAnimation { duration: m3.durationNormal } }
                 }
 
                 RoundButton {
                     id: loginButton
                     Layout.alignment: Qt.AlignHCenter
-                    Layout.preferredWidth: 64
-                    Layout.preferredHeight: 64
+                    Layout.preferredWidth: m3.controlFabSize
+                    Layout.preferredHeight: m3.controlFabSize
                     focusPolicy: Qt.NoFocus
                     enabled: !container.isLoggingIn
 
                     contentItem: Text {
                         text: container.isLoggingIn ? "⋯" : "→"
                         color: container.textColor
-                        font.pixelSize: 32
+                        font.pixelSize: m3.typeHuge + m3.spaceXL
                         horizontalAlignment: Text.AlignHCenter
                         verticalAlignment: Text.AlignVCenter
                     }
 
                     background: Rectangle {
                         color: container.isLoggingIn ? surfaceVariantColor : (loginButton.pressed ? Qt.darker(container.extractedAccent, 1.1) : container.extractedAccent)
-                        radius: 32
+                        radius: m3.controlFabSize / 2
                         opacity: container.isLoggingIn ? 0.5 : 1.0
                     }
 
@@ -681,7 +704,7 @@ Rectangle {
 
     Popup {
         id: userPopup
-        width: 260
+        width: m3.popupWidth
         height: (typeof userModel !== "undefined") ? Math.min(300, userModel.count * 50 + 20) : 100
         x: (parent.width - width) / 2
         y: (parent.height - height) / 2 - 50
@@ -691,13 +714,13 @@ Rectangle {
         onOpened: userList.forceActiveFocus()
         background: Rectangle {
             color: baseColor
-            radius: 24
+            radius: m3.radiusLarge
             opacity: 0.95
             border.color: surfaceVariantColor
             border.width: 1
         }
-        enter: Transition { NumberAnimation { property: "opacity"; from: 0; to: 1; duration: 200 } }
-        exit: Transition { NumberAnimation { property: "opacity"; from: 1; to: 0; duration: 200 } }
+        enter: Transition { NumberAnimation { property: "opacity"; from: 0; to: 1; duration: m3.durationNormal } }
+        exit: Transition { NumberAnimation { property: "opacity"; from: 1; to: 0; duration: m3.durationNormal } }
         ListView {
             id: userList
             anchors.fill: parent
@@ -714,7 +737,7 @@ Rectangle {
                 property bool isCurrent: index === userList.currentIndex
                 background: Rectangle {
                     color: isCurrent ? surfaceVariantColor : (hovered ? surfaceColor : "transparent")
-                    radius: 12
+                    radius: m3.radiusSmall
                     Rectangle {
                         anchors.left: parent.left
                         anchors.verticalCenter: parent.verticalCenter
@@ -723,7 +746,7 @@ Rectangle {
                         height: isCurrent ? 16 : 0
                         color: container.extractedAccent
                         radius: 2
-                        Behavior on height { NumberAnimation { duration: 150 } }
+                        Behavior on height { NumberAnimation { duration: m3.durationFast } }
                     }
                 }
                 contentItem: RowLayout {
@@ -746,7 +769,7 @@ Rectangle {
                                 return finalVal.charAt(0).toUpperCase();
                             }
                             color: isCurrent ? baseColor : container.textColor
-                            font.pixelSize: 12
+                            font.pixelSize: m3.typeSmaller
                             font.family: activeFontBold
                             font.weight: Font.Bold
                         }
@@ -763,7 +786,7 @@ Rectangle {
                             return cleanName(d ? d : (r ? r : (n_r ? n_r : e)));
                         }
                         color: isCurrent ? container.textColor : (hovered ? "#DDDDDD" : "#AAAAAA")
-                        font.pixelSize: 15
+                        font.pixelSize: m3.typeSmall
                         font.family: activeFontRegular
                         horizontalAlignment: Text.AlignHCenter
                         verticalAlignment: Text.AlignVCenter
@@ -785,7 +808,7 @@ Rectangle {
 
     Popup {
         id: sessionPopup
-        width: 260
+        width: m3.popupWidth
         height: (typeof sessionModel !== "undefined") ? Math.min(250, sessionModel.count * 50 + 20) : 100
         x: (parent.width - width) / 2
         y: (parent.height - height) / 2 + 80
@@ -795,13 +818,13 @@ Rectangle {
         onOpened: sessionList.forceActiveFocus()
         background: Rectangle {
             color: baseColor
-            radius: 24
+            radius: m3.radiusLarge
             opacity: 0.95
             border.color: surfaceVariantColor
             border.width: 1
         }
-        enter: Transition { NumberAnimation { property: "opacity"; from: 0; to: 1; duration: 200 } }
-        exit: Transition { NumberAnimation { property: "opacity"; from: 1; to: 0; duration: 200 } }
+        enter: Transition { NumberAnimation { property: "opacity"; from: 0; to: 1; duration: m3.durationNormal } }
+        exit: Transition { NumberAnimation { property: "opacity"; from: 1; to: 0; duration: m3.durationNormal } }
         ListView {
             id: sessionList
             anchors.fill: parent
@@ -818,7 +841,7 @@ Rectangle {
                 property bool isCurrent: index === sessionList.currentIndex
                 background: Rectangle {
                     color: isCurrent ? surfaceVariantColor : (hovered ? surfaceColor : "transparent")
-                    radius: 12
+                    radius: m3.radiusSmall
                     Rectangle {
                         anchors.left: parent.left
                         anchors.verticalCenter: parent.verticalCenter
@@ -827,7 +850,7 @@ Rectangle {
                         height: isCurrent ? 16 : 0
                         color: container.extractedAccent
                         radius: 2
-                        Behavior on height { NumberAnimation { duration: 150 } }
+                        Behavior on height { NumberAnimation { duration: m3.durationFast } }
                     }
                 }
                 contentItem: RowLayout {
@@ -838,7 +861,7 @@ Rectangle {
                         Layout.preferredWidth: 40
                         text: "󰟀"
                         color: isCurrent ? container.extractedAccent : "gray"
-                        font.pixelSize: 16
+                        font.pixelSize: m3.typeNormal
                         horizontalAlignment: Text.AlignHCenter
                         verticalAlignment: Text.AlignVCenter
                     }
@@ -850,7 +873,7 @@ Rectangle {
                             return cleanName(n_val ? n_val : f_val);
                         }
                         color: isCurrent ? container.textColor : "#AAAAAA"
-                        font.pixelSize: 14
+                        font.pixelSize: m3.typeSmall
                         font.family: activeFontRegular
                         horizontalAlignment: Text.AlignHCenter
                         verticalAlignment: Text.AlignVCenter

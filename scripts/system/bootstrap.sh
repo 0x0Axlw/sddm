@@ -41,6 +41,14 @@ DEPLOY_USER="${SUDO_USER:-}"
 msg "Updating installed theme in $THEME_DIR..."
 cp -f -- "$REPO/Main.qml" "$THEME_DIR/Main.qml"
 chmod 644 "$THEME_DIR/Main.qml"
+if [ -d "$REPO/components" ]; then
+    mkdir -p -- "$THEME_DIR/components"
+    cp -rf -- "$REPO/components/." "$THEME_DIR/components/"
+fi
+if [ -d "$REPO/assets/fonts" ]; then
+    mkdir -p -- "$THEME_DIR/assets"
+    cp -rf -- "$REPO/assets/fonts" "$THEME_DIR/assets/" 2>/dev/null || true
+fi
 if [ -d "$REPO/scripts" ]; then
     mkdir -p -- "$THEME_DIR/scripts"
     cp -rf -- "$REPO/scripts/." "$THEME_DIR/scripts/"
