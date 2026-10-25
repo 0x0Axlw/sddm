@@ -1,0 +1,8 @@
+# Pixie SDDM - passwordless wallpaper sync helper.
+# Installed by scripts/system/bootstrap.sh from the pixie-sddm repository.
+# Do not edit by hand; rerun the bootstrap instead.
+#
+# Scope: the fixed, root-owned /usr/local/bin/pixie-sddm-sync wrapper ONLY.
+# The wrapper takes no arguments, reads the wallpaper from the invoking
+# user's Quickshell state file, and validates inputs itself.
+SATORU ALL=(root) NOPASSWD: /usr/local/bin/pixie-sddm-sync

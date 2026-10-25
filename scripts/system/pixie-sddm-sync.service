@@ -1,0 +1,9 @@
+# Pixie SDDM - wallpaper sync job (installed by scripts/system/bootstrap.sh)
+# Runs once per wallpaper change. The sync script is content-hash aware, so
+# redundant triggers (same wallpaper again) skip regeneration by themselves.
+[Unit]
+Description=Sync desktop wallpaper + Matugen palette to Pixie SDDM greeter
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/sudo /usr/local/bin/pixie-sddm-sync

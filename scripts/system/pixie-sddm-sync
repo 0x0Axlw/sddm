@@ -1,0 +1,59 @@
+#!/bin/bash
+#
+# pixie-sddm-sync - narrowly scoped privileged helper for automatic Pixie SDDM
+# wallpaper synchronization.
+#
+# Installed root-owned at /usr/local/bin/pixie-sddm-sync (see
+# scripts/system/bootstrap.sh) and invoked without arguments via
+#   sudo /usr/local/bin/pixie-sddm-sync
+# from the systemd user path unit that watches the Quickshell wallpaper state
+# file (`~/.local/state/quickshell/user/generated/wallpaper/path.txt`).
+#
+# It accepts NO user arguments on purpose (see /etc/sudoers.d/pixie-sddm-sync):
+#   1. it resolves the invoking user via $SUDO_USER (never trusts $HOME/args),
+#   2. reads ONLY that user's Quickshell wallpaper state file,
+#   3. accepts only paths inside that user's home directory (no traversal),
+#   4. hands a fixed option set to scripts/update-wallpaper.sh, which itself
+#      revalidates that the file is a real image before doing anything.
+
+set -u -o pipefail
+
+THEME_DIR="/usr/share/sddm/themes/pixie"
+SYNC_SCRIPT="${THEME_DIR}/scripts/update-wallpaper.sh"
+ASSETS_DIR="/var/lib/sddm/pixie"
+TAG="pixie-sddm-sync"
+
+log() { printf '%s: %s\n' "$TAG" "$*" >&2; }
+
+# No arguments accepted on purpose.
+[ "$#" -eq 0 ] || { log "this helper takes no arguments"; exit 2; }
+
+[ "$(id -u)" -eq 0 ] || { log "must run as root"; exit 1; }
+[ -f "$SYNC_SCRIPT" ] || { log "sync script missing: $SYNC_SCRIPT"; exit 1; }
+
+user="${SUDO_USER:-}"
+case "$user" in
+    ""|"root") log "SUDO_USER not set; cannot determine which wallpaper to sync"; exit 1 ;;
+esac
+user_home="$(getent passwd "$user" 2>/dev/null | cut -d: -f6)"
+case "$user_home" in
+    ""|"/") log "cannot resolve home directory for user '$user'"; exit 1 ;;
+esac
+
+STATE_FILE="${user_home}/.local/state/quickshell/user/generated/wallpaper/path.txt"
+[ -r "$STATE_FILE" ] || { log "no wallpaper state file yet ($STATE_FILE); nothing to do"; exit 0; }
+
+wall="$(tr -d '\r\n' <"$STATE_FILE")"
+[ -n "$wall" ] || { log "wallpaper state file is empty; nothing to do"; exit 0; }
+
+# Safety: only wallpapers inside the invoking user's home, no traversal.
+case "$wall" in
+    "$user_home"/*) ;;
+    *) log "wallpaper is outside $user_home, skipping: $wall"; exit 0 ;;
+esac
+case "$wall" in
+    *".."*|*$'\n'*|*" "*$'\n'*) log "invalid wallpaper path, skipping: $wall"; exit 1 ;;
+esac
+[ -f "$wall" ] || { log "wallpaper file missing, skipping: $wall"; exit 0; }
+
+exec /usr/bin/env HOME="$user_home" "$SYNC_SCRIPT" "$wall"

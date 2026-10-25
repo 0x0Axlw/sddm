@@ -1,0 +1,12 @@
+# Pixie SDDM - wallpaper sync trigger (installed by scripts/system/bootstrap.sh)
+# Watches the Quickshell wallpaper state file. Matugen rewrites this file on
+# every wallpaper change made through the Quickshell wallpaper selector or
+# switchwall.sh - no polling, no daemon, no changes to the Quickshell config.
+[Unit]
+Description=Trigger Pixie SDDM wallpaper sync when the Quickshell wallpaper changes
+
+[Path]
+PathChanged=%h/.local/state/quickshell/user/generated/wallpaper/path.txt
+
+[Install]
+WantedBy=default.target

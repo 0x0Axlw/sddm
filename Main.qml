@@ -135,7 +135,9 @@ Rectangle {
         id: colorDelay
         interval: 1000 // Give it a full second
         repeat: true   // Keep trying until we succeed
-        running: backgroundImage.status === Image.Ready && !colorExtractor.processed && config.autoColor === "true"
+        // The extractor only runs when NO Matugen palette is active;
+        // otherwise it would overwrite the Matugen-driven color bindings.
+        running: backgroundImage.status === Image.Ready && !colorExtractor.processed && config.autoColor === "true" && !container.matugenActive
         onTriggered: colorExtractor.requestPaint()
     }
 
@@ -149,6 +151,8 @@ Rectangle {
         property int retries: 0 // Add this to track GPU sync delays
 
         onPaint: {
+            // Never fight the Matugen palette: skip extraction entirely when active.
+            if (container.matugenActive) { processed = true; return; }
             var ctx = getContext("2d");
             var res = 60;
             ctx.clearRect(0, 0, res, res);
@@ -247,7 +251,7 @@ Rectangle {
     Connections {
         target: backgroundImage
         function onStatusChanged() {
-            if (backgroundImage.status === Image.Ready) {
+            if (backgroundImage.status === Image.Ready && !container.matugenActive) {
                 colorExtractor.processed = false;
                 colorDelay.start();
             }

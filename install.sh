@@ -97,6 +97,18 @@ if [ -f "${BACKUP_DIR}/theme.conf" ]; then
     if ! grep -q "^use24HourClock=" "${THEME_DIR}/theme.conf"; then
         sed -i '/^autoColor=/a use24HourClock=true' "${THEME_DIR}/theme.conf"
     fi
+    # Ensure wallpaper sync keys from older configs are present (empty = disabled)
+    if ! grep -q "^wallpaper=" "${THEME_DIR}/theme.conf"; then
+        sed -i '/^background=/a wallpaper=' "${THEME_DIR}/theme.conf"
+    fi
+    if ! grep -q "^matugen=" "${THEME_DIR}/theme.conf"; then
+        {
+            echo "matugen=false"
+            echo "matugenAccent=$(grep -m1 '^accentColor=' "${THEME_DIR}/theme.conf" | cut -d= -f2-)"
+            echo "matugenBackground=$(grep -m1 '^backgroundColor=' "${THEME_DIR}/theme.conf" | cut -d= -f2-)"
+            echo "matugenText=$(grep -m1 '^textColor=' "${THEME_DIR}/theme.conf" | cut -d= -f2-)"
+        } >> "${THEME_DIR}/theme.conf"
+    fi
 fi
 
 rm -rf "${BACKUP_DIR}"
