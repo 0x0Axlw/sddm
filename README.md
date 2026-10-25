@@ -289,6 +289,31 @@ Environment: PIXIE_WALLPAPER, PIXIE_THEME_DIR, PIXIE_ASSETS_DIR, PIXIE_MODE,
 PIXIE_SCHEME, PIXIE_SOURCE_COLOR_INDEX, PIXIE_DISABLE_MATUGEN, PIXIE_DEBUG.
 ```
 
+### Automatic Sync With Quickshell (recommended)
+
+If your wallpaper is managed by Quickshell (e.g. end-4 style shells), Matugen
+already rewrites `~/.local/state/quickshell/user/generated/wallpaper/path.txt`
+on every change. A systemd **path unit** reacts to that file:
+
+```bash
+sudo ./scripts/system/bootstrap.sh          # one-time, system side (see below)
+install -Dm644 scripts/system/pixie-sddm-sync.path    ~/.config/systemd/user/pixie-sddm-sync.path
+install -Dm644 scripts/system/pixie-sddm-sync.service ~/.config/systemd/user/pixie-sddm-sync.service
+systemctl --user daemon-reload && systemctl --user enable --now pixie-sddm-sync.path
+```
+
+`bootstrap.sh` backs up the theme, adds the missing `wallpaper=`/`matugen=`
+keys to the installed `theme.conf`, creates `/var/lib/sddm/pixie`, installs the
+fixed `/usr/local/bin/pixie-sddm-sync` helper, a passwordless `sudoers` entry
+for **that one helper only**, and runs the first real sync. The hook then:
+
+- fires only when the state file actually changes (event-driven, no polling),
+- skips regeneration when the wallpaper content is unchanged (hash check),
+- never touches your Quickshell config or desktop theming.
+
+Disable it with `systemctl --user disable --now pixie-sddm-sync.path` and
+remove `/etc/sudoers.d/pixie-sddm-sync` to drop the sudoers entry.
+
 ### Integrating With Your Wallpaper Changer
 
 Honest note: there is no universal "current wallpaper" API on Linux, and each
