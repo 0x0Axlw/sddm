@@ -54,6 +54,11 @@ esac
 case "$wall" in
     *".."*|*$'\n'*|*" "*$'\n'*) log "invalid wallpaper path, skipping: $wall"; exit 1 ;;
 esac
+# Video wallpapers can't be extracted into a still image here; the shell that
+# manages them also produces thumbnails for colors. Skip quietly.
+case "${wall,,}" in
+    *.mp4|*.webm|*.mkv|*.avi|*.mov) log "video wallpaper skipped: $wall"; exit 0 ;;
+esac
 [ -f "$wall" ] || { log "wallpaper file missing, skipping: $wall"; exit 0; }
 
 exec /usr/bin/env HOME="$user_home" "$SYNC_SCRIPT" "$wall"
