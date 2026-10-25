@@ -62,11 +62,9 @@ if ! grep -q "^wallpaper=" "$THEME_CONF" 2>/dev/null; then
     ok "Backed up the old theme.conf to $(basename "$THEME_CONF").bak.$STAMP"
 fi
 
-set_key() {  # set_key FILE KEY VALUE - replaces in place, appends when missing
+set_key() {  # set_key FILE KEY VALUE - only ADDS when missing (never clobbers user values)
     local file="$1" key="$2" val="$3"
-    if grep -q "^${key}=" "$file"; then
-        sed -i "s|^${key}=.*|${key}=$(printf '%s' "$val" | sed -e 's/[\\|&]/\\\\&/g')|" "$file"
-    else
+    if ! grep -q "^${key}=" "$file"; then
         printf '%s=%s\n' "$key" "$val" >> "$file"
     fi
 }
@@ -112,7 +110,9 @@ if [ -r "$STATE_FILE" ] && [ -s "$STATE_FILE" ]; then
     WALL="$(tr -d '\r\n' <"$STATE_FILE")"
     if [ -n "$WALL" ] && [ -f "$WALL" ]; then
         msg "Running the real wallpaper sync for: $WALL"
-        HOME="$(getent passwd "$DEPLOY_USER" | cut -d: -f6)" "$REPO/scripts/update-wallpaper.sh" --theme-dir "$THEME_DIR" --assets-dir "$ASSETS_DIR" "$WALL" || \
+        # --force: bootstrap is self-healing - it re-runs Matugen and rewrites
+        # the theme.conf keys even when the wallpaper content is unchanged.
+        HOME="$(getent passwd "$DEPLOY_USER" | cut -d: -f6)" "$REPO/scripts/update-wallpaper.sh" --theme-dir "$THEME_DIR" --assets-dir "$ASSETS_DIR" --force "$WALL" || \
             warn "First sync failed - see the message above. The hook will retry on the next wallpaper change."
     else
         warn "Wallpaper state file present but the wallpaper is missing/empty; skipping first sync."
