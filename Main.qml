@@ -14,7 +14,7 @@ Rectangle {
     id: container
     width: 1920
     height: 1080
-    color: config.backgroundColor
+    color: baseColor
     focus: !loginState.visible
 
     // User & Session Logic (Root Level)
@@ -99,12 +99,37 @@ Rectangle {
         }
     }
 
-    // Dynamic Color Configuration
-    property color extractedAccent: config.accentColor
-    property color baseColor: config.backgroundColor
+    // Wallpaper & palette resolution:
+    //   1. "wallpaper" key  - synced desktop wallpaper (scripts/update-wallpaper.sh)
+    //   2. "background" key - bundled default / manual configuration
+    // Fallback: if loading the synced wallpaper fails (deleted, unreadable),
+    // it falls back to the bundled default instead of showing a blank screen.
+    property string wallpaperKey: (config.wallpaper && config.wallpaper.length > 0) ? config.wallpaper : config.background
+
+    Image {
+        id: backgroundImage
+        property bool fallbackActive: false
+        source: container.wallpaperKey
+        anchors.fill: parent
+        fillMode: Image.PreserveAspectCrop
+
+        onStatusChanged: {
+            if (status === Image.Error && !fallbackActive) {
+                fallbackActive = true;
+                console.log("Pixie SDDM: Background failed to load (" + source + "), using built-in default.");
+                source = "assets/background.jpg";
+            }
+        }
+    }
+
+    // Palette priority: Matugen palette > static colors > runtime autoColor extraction.
+    property bool matugenActive: config.matugen === "true" && config.matugenAccent && config.matugenAccent.length > 0
+    property color extractedAccent: matugenActive ? config.matugenAccent : config.accentColor
+    property color baseColor: matugenActive ? (config.matugenBackground && config.matugenBackground.length > 0 ? config.matugenBackground : config.backgroundColor) : config.backgroundColor
+    property color textColor: matugenActive ? (config.matugenText && config.matugenText.length > 0 ? config.matugenText : config.textColor) : config.textColor
     property color surfaceColor: Qt.lighter(baseColor, 1.3)
     property color surfaceVariantColor: Qt.lighter(baseColor, 1.6)
-    property bool uiReady: config.autoColor !== "true" || colorExtractor.processed
+    property bool uiReady: matugenActive || config.autoColor !== "true" || colorExtractor.processed
 
     Timer {
         id: colorDelay
@@ -237,13 +262,6 @@ Rectangle {
     property string activeFontRegular: (config.fontFamily && config.fontFamily.length > 0 && availableFonts.indexOf(config.fontFamily) >= 0) ? config.fontFamily : fontRegular.name
     property string activeFontBold:    (config.fontFamily && config.fontFamily.length > 0 && availableFonts.indexOf(config.fontFamily) >= 0) ? config.fontFamily : fontBold.name
 
-    Image {
-        id: backgroundImage
-        source: config.background
-        anchors.fill: parent
-        fillMode: Image.PreserveAspectCrop
-    }
-
     // High-Quality Standalone Blur (Qt6 Native)
     MultiEffect {
         id: backgroundBlur
@@ -330,7 +348,7 @@ Rectangle {
 
         Text {
             text: "Press any key to unlock"
-            color: config.textColor
+            color: container.textColor
             font.pixelSize: 16
             anchors {
                 bottom: parent.bottom
@@ -506,7 +524,7 @@ Rectangle {
                             }
                             return cleanName(sddm.lastUser ? sddm.lastUser : "User");
                         }
-                        color: "white"
+                        color: container.textColor
                         font.pixelSize: 24
                         font.weight: Font.Bold
                         font.family: activeFontRegular
@@ -557,7 +575,7 @@ Rectangle {
                                 }
                                 return "Hyprland";
                             }
-                            color: "white"
+                            color: container.textColor
                             font.pixelSize: 13
                             font.weight: Font.Medium
                         }
@@ -577,7 +595,7 @@ Rectangle {
                     Layout.fillWidth: true
                     horizontalAlignment: Text.AlignHCenter
                     font.pixelSize: 18
-                    color: "white"
+                    color: container.textColor
                     focus: loginState.visible
                     enabled: !container.isLoggingIn
 
@@ -591,7 +609,7 @@ Rectangle {
 
                     Text {
                         text: "Enter Password"
-                        color: "gray"
+                        color: container.textColor
                         font.pixelSize: 16
                         visible: !parent.text
                         anchors.centerIn: parent
@@ -627,7 +645,7 @@ Rectangle {
 
                     contentItem: Text {
                         text: container.isLoggingIn ? "⋯" : "→"
-                        color: "white"
+                        color: container.textColor
                         font.pixelSize: 32
                         horizontalAlignment: Text.AlignHCenter
                         verticalAlignment: Text.AlignVCenter
@@ -723,7 +741,7 @@ Rectangle {
                                 var finalVal = d ? d.toString() : (n_r ? n_r.toString() : "U");
                                 return finalVal.charAt(0).toUpperCase();
                             }
-                            color: isCurrent ? baseColor : "white"
+                            color: isCurrent ? baseColor : container.textColor
                             font.pixelSize: 12
                             font.family: activeFontBold
                             font.weight: Font.Bold
@@ -740,7 +758,7 @@ Rectangle {
                             var e = userModel.data(mIdx, Qt.EditRole);
                             return cleanName(d ? d : (r ? r : (n_r ? n_r : e)));
                         }
-                        color: isCurrent ? "white" : (hovered ? "#DDDDDD" : "#AAAAAA")
+                        color: isCurrent ? container.textColor : (hovered ? "#DDDDDD" : "#AAAAAA")
                         font.pixelSize: 15
                         font.family: activeFontRegular
                         horizontalAlignment: Text.AlignHCenter
@@ -827,7 +845,7 @@ Rectangle {
                             var f_val = sessionModel.data(sessionModel.index(index, 0), Qt.UserRole + 2);
                             return cleanName(n_val ? n_val : f_val);
                         }
-                        color: isCurrent ? "white" : "#AAAAAA"
+                        color: isCurrent ? container.textColor : "#AAAAAA"
                         font.pixelSize: 14
                         font.family: activeFontRegular
                         horizontalAlignment: Text.AlignHCenter

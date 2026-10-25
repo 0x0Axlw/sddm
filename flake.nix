@@ -63,6 +63,7 @@
                 ./theme.conf
                 ./assets
                 ./components
+                ./scripts
                 ./LICENSE
               ];
             };

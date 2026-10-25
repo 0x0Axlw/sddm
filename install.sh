@@ -70,7 +70,18 @@ fi
 echo -e "${BLUE}==>${NC} Installing Pixie (Qt${SYSTEM_QT}) to ${THEME_DIR}..."
 mkdir -p "${THEME_DIR}"
 cp -r assets components Main.qml metadata.desktop theme.conf LICENSE "${THEME_DIR}/"
+# Wallpaper sync + Matugen theming helpers (optional feature)
+if [ -d scripts ]; then
+    cp -r scripts "${THEME_DIR}/"
+    chmod 755 "${THEME_DIR}/scripts/update-wallpaper.sh"
+fi
 chmod -R 755 "${THEME_DIR}"
+
+# Shared, world-readable directory for the synced desktop wallpaper.
+# The SDDM greeter runs as its own user and cannot read files inside $HOME,
+# so scripts/update-wallpaper.sh copies the wallpaper here instead.
+mkdir -p /var/lib/sddm/pixie 2>/dev/null && chmod 755 /var/lib/sddm/pixie || \
+    echo -e "${YELLOW}==>${NC} Note: could not create /var/lib/sddm/pixie (create it later for wallpaper sync)."
 
 # Restore user configurations if they were backed up
 if [ -f "${BACKUP_DIR}/theme.conf" ]; then
