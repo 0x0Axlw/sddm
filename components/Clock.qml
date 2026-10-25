@@ -44,14 +44,13 @@ Item {
         var date = new Date();
         clock.now = date;
         var hours = date.getHours();
-        // If 24-hour is not strictly "true", convert to 12-hour format
+        // 12-hour mode (use24HourClock not strictly "true") shifts midnight
+        // to 12; both modes render two digits, like the shell's hourStr.
         if (config.use24HourClock !== "true") {
             hours = hours % 12;
-            if (hours === 0) hours = 12; // Midnight becomes 12
-            clock.hoursStr = "" + hours; // No zero padding in 12-hour mode
-        } else {
-            clock.hoursStr = hours < 10 ? "0" + hours : "" + hours;
+            if (hours === 0) hours = 12;
         }
+        clock.hoursStr = (hours < 10 ? "0" : "") + hours;
         var minutes = date.getMinutes();
         clock.minutesStr = minutes < 10 ? "0" + minutes : "" + minutes;
     }
@@ -94,70 +93,81 @@ Item {
         }
         spacing: Math.max(m3.spaceS, clock.displaySize * 0.04)
 
-        Row {
-            id: timeRow
-            anchors.horizontalCenter: parent.horizontalCenter
-            spacing: clock.displaySize * 0.05
+        // Time line: wrapped in a plain Item because anchors on positioner
+        // (Column) children are ignored - without this the date below is not
+        // truly centered against the time row.
+        Item {
+            width: parent.width
+            implicitWidth: timeRow.width
+            implicitHeight: timeRow.height
 
-            Text {
-                text: clock.hoursStr
-                color: clock.smartHoursColor
-                font {
-                    pixelSize: clock.displaySize
-                    family: clock.fontFamily
-                    weight: Font.Medium
+            Row {
+                id: timeRow
+                anchors {
+                    horizontalCenter: parent.horizontalCenter
+                    verticalCenter: parent.verticalCenter
                 }
-                anchors.verticalCenter: parent.verticalCenter
-                verticalAlignment: Text.AlignVCenter
-                antialiasing: true
-            }
+                spacing: clock.displaySize * 0.05
 
-            // Material 3 / Pixel-style colon: two round dots.
-            Item {
-                width: clock.displaySize * 0.14
-                height: clock.displaySize * 0.58
-                anchors.verticalCenter: parent.verticalCenter
-
-                Column {
-                    anchors.centerIn: parent
-                    spacing: clock.displaySize * 0.10
-
-                    Rectangle {
-                        width: clock.displaySize * 0.075
-                        height: width
-                        radius: width / 2
-                        color: clock.smartHoursColor
-                        antialiasing: true
+                Text {
+                    id: hoursText
+                    text: clock.hoursStr
+                    color: clock.smartHoursColor
+                    font {
+                        pixelSize: clock.displaySize
+                        family: clock.fontFamily
+                        weight: Font.Medium
                     }
-                    Rectangle {
-                        width: clock.displaySize * 0.075
-                        height: width
-                        radius: width / 2
-                        color: clock.smartMinutesColor
-                        antialiasing: true
+                    antialiasing: true
+                }
+
+                // Material 3 / Pixel-style colon: two round dots, centered on
+                // the digit line (height follows the hours glyph line box).
+                Item {
+                    width: clock.displaySize * 0.14
+                    height: hoursText.height
+
+                    Column {
+                        anchors.centerIn: parent
+                        spacing: clock.displaySize * 0.10
+
+                        Rectangle {
+                            width: clock.displaySize * 0.075
+                            height: width
+                            radius: width / 2
+                            color: clock.smartHoursColor
+                            antialiasing: true
+                        }
+                        Rectangle {
+                            width: clock.displaySize * 0.075
+                            height: width
+                            radius: width / 2
+                            color: clock.smartMinutesColor
+                            antialiasing: true
+                        }
                     }
                 }
-            }
 
-            Text {
-                text: clock.minutesStr
-                color: clock.smartMinutesColor
-                font {
-                    pixelSize: clock.displaySize
-                    family: clock.fontFamily
-                    weight: Font.Medium
+                Text {
+                    text: clock.minutesStr
+                    color: clock.smartMinutesColor
+                    font {
+                        pixelSize: clock.displaySize
+                        family: clock.fontFamily
+                        weight: Font.Medium
+                    }
+                    antialiasing: true
                 }
-                anchors.verticalCenter: parent.verticalCenter
-                verticalAlignment: Text.AlignVCenter
-                antialiasing: true
             }
         }
 
-        // Date, naturally placed below the clock.
+        // Date, centered on the widest line (the clock), like the shell's
+        // clock widgets center their secondary line.
         Text {
+            width: parent.width
             text: clock.dateText
             color: clock.dateColor
-            anchors.horizontalCenter: parent.horizontalCenter
+            horizontalAlignment: Text.AlignHCenter
             font {
                 pixelSize: Math.max(m3.typeNormal, clock.displaySize * 0.11)
                 family: clock.fontFamily

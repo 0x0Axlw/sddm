@@ -270,6 +270,54 @@ set_key() {   # set_key FILE KEY [VALUE]   (in place, appends when missing)
 get_key() { grep -m1 "^${2}=" "$1" 2>/dev/null | cut -d= -f2- ; }
 
 # ----------------------------------------------------------------------------
+# Date/time format sync (end4pc shell settings)
+#
+# The greeter cannot read the user's home, so the effective shell clock
+# settings (~/.config/illogical-impulse/config.json: time.format,
+# time.dateFormat) are mirrored into theme.conf keys here. Qt format
+# semantics: 12-hour iff the format contains "ap" (matches the shell's
+# own use12HourFormat check).
+# ----------------------------------------------------------------------------
+sync_time_settings() {
+    local conf="$1"
+    # Prefer the user's XDG config dir, fall back to $HOME/.config (the
+    # privileged wrapper forces HOME to the invoking user's home).
+    local shell_conf=""
+    local candidate
+    for candidate in "${XDG_CONFIG_HOME:-$HOME/.config}/illogical-impulse/config.json" \
+                     "$HOME/.config/illogical-impulse/config.json"; do
+        if [ -f "$candidate" ]; then shell_conf="$candidate"; break; fi
+    done
+    [ -n "$shell_conf" ] || { msg "No end4pc shell config found - time formats left unchanged."; return 0; }
+    command -v python3 >/dev/null 2>&1 || { warn "python3 missing - cannot read shell time settings."; return 0; }
+
+    local parsed
+    parsed="$(python3 - "$shell_conf" <<'PYEOF'
+import json, sys
+try:
+    t = (json.load(open(sys.argv[1])).get("time") or {})
+    print(t.get("format") or "", t.get("dateFormat") or "", sep="\n")
+except Exception:
+    pass
+PYEOF
+)" || parsed=""
+    local tfmt dfmt
+    tfmt="$(printf '%s' "$parsed" | sed -n '1p')"
+    dfmt="$(printf '%s' "$parsed" | sed -n '2p')"
+
+    if [ -n "$tfmt" ]; then
+        local v=true
+        printf '%s' "$tfmt" | grep -qi 'ap' && v=false
+        set_key "$conf" "use24HourClock" "$v"
+        ok "theme.conf: use24HourClock=$v (shell time format: $tfmt)"
+    fi
+    if [ -n "$dfmt" ]; then
+        set_key "$conf" "dateFormat" "$dfmt"
+        ok "theme.conf: dateFormat=$dfmt (shell date format)"
+    fi
+}
+
+# ----------------------------------------------------------------------------
 # Privilege handling - sudo re-exec only if our writes would fail
 # ----------------------------------------------------------------------------
 needs_privileges() {
@@ -425,6 +473,9 @@ main() {
         mkdir -p -- "$ASSETS_DIR" || die "Cannot create $ASSETS_DIR"
     fi
     chmod 0755 "$ASSETS_DIR" || die "Cannot chmod $ASSETS_DIR"
+
+    # ---- Date/time format sync (independent of wallpaper changes) ----
+    sync_time_settings "$THEME_CONF"
 
     # ---- Rerun safety: skip when the wallpaper content did not change ----
     WALLSHA="$(sha_of "$WALLPAPER")"

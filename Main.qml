@@ -385,7 +385,7 @@ Rectangle {
             anchors.fill: parent
             baseAccent: container.extractedAccent
             fontFamily: container.activeFontRegular
-            dateText: Qt.formatDateTime(mainClock.now, "dddd, MMMM d")
+            dateText: Qt.locale().toString(mainClock.now, (config.dateFormat && config.dateFormat.length > 0) ? config.dateFormat : "dddd, MMMM d")
             dateColor: mixColors(container.textColor, container.baseColor, 0.3)
             opacity: container.uiReady ? 1 : 0
             Behavior on opacity { NumberAnimation { duration: m3.durationNormal } }
