@@ -108,9 +108,37 @@ Rectangle {
         }
     }
 
-    // Keep the avatar in sync with the selected user: prefer SDDM's per-user
-    // icon (UserRole+3 IconRole); the bundled image is only a fallback.
+    // Keep the avatar in sync with the selected user. Priority:
+    //   1. per-user avatar      (scripts/change-avatar.sh -> theme.conf
+    //                            "avatar_<username>" key -> shared assets dir)
+    //   2. SDDM's per-user icon (UserRole+3 IconRole, usually ~/.face)
+    //   3. the bundled default  (assets/avatar.jpg)
+    // config is a dynamic property map in the greeter, so unknown keys are
+    // safe: a missing entry reads as undefined here.
+    function selectedUserAvatarKey(name) {
+        return (name === "") ? "" : ("avatar_" + name);
+    }
+
+    // Selected user's login name (UserRole+1 = EditRole); "" when unknown.
+    function selectedUserName() {
+        if (typeof userModel !== "undefined" && userModel.count > 0) {
+            var idx = Math.max(0, Math.min(container.userIndex, userModel.count - 1));
+            var name = userModel.data(userModel.index(idx, 0), Qt.UserRole + 1);
+            if (name) return name.toString();
+            var disp = userModel.data(userModel.index(idx, 0), Qt.DisplayRole);
+            if (disp) return disp.toString();
+        }
+        if (typeof sddm !== "undefined" && sddm.lastUser) return sddm.lastUser.toString();
+        return "";
+    }
+
     function selectedUserIcon() {
+        var name = selectedUserName();
+        if (name !== "") {
+            var key = "avatar_" + name;
+            var own = config[key];
+            if (own && own.toString().length > 0) return own.toString();
+        }
         if (typeof userModel !== "undefined" && userModel.count > 0) {
             var idx = Math.max(0, Math.min(container.userIndex, userModel.count - 1));
             var icon = userModel.data(userModel.index(idx, 0), Qt.UserRole + 3);
@@ -545,14 +573,7 @@ Rectangle {
                             visible: false
 
                             Component.onCompleted: {
-                                var s = Qt.resolvedUrl("assets/avatar.jpg");
-                                if (typeof userModel !== "undefined" && userModel.count > 0) {
-                                    var icon = userModel.data(userModel.index(container.userIndex, 0), Qt.UserRole + 3);
-                                    if (icon && icon.toString().match(/\.(jpg|jpeg|png|bmp|webp|svg)$/i)) {
-                                        s = icon.toString();
-                                    }
-                                }
-                                source = s;
+                                source = Qt.resolvedUrl(selectedUserIcon());
                             }
 
                             onStatusChanged: {

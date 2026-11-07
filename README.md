@@ -413,7 +413,36 @@ Edit `theme.conf` or replace assets in `assets/`:
 - **Background Colors:** Change `backgroundColor` in `theme.conf`. The login card, input fields, and borders will automatically generate lighter variants to match.
 - **Clock Format:** Set `use24HourClock=false` in `theme.conf` to switch to a 12-hour clock, or `use24HourClock=true` for 24-hour.
 
+## 👤 Per-User Avatars (`scripts/change-avatar.sh`)
+
+Give every user their own profile picture on the login screen:
+
+```bash
+# Install / replace
+./change-avatar.sh <username> /path/to/image.png
+
+# Remove (falls back to SDDM's icon / the bundled default)
+./change-avatar.sh --remove <username>
+
+# List
+./change-avatar.sh --list
+```
+
+- The image is validated (format checked), auto-oriented, metadata-stripped and
+  **scaled to fit a 512×512 box** (aspect preserved, never upscaled) — so huge
+  or oddly-shaped photos come out clean.
+- The circular framing, aspect-fill center crop and letter fallback stay exactly
+  as the theme's design defines them; the avatar is stored in the shared SDDM
+  assets dir (`/var/lib/sddm/pixie/avatars/`, like the wallpaper) because the
+  greeter cannot read `$HOME`.
+- `theme.conf` gets an `avatar_<username>` key the greeter reads via its
+  dynamic config map. Precedence per user: theme key → SDDM's icon role →
+  bundled `assets/avatar.jpg` → initial-letter fallback.
+- The change takes effect the next time the lock/login screen is shown
+  (the greeter reads `theme.conf` at startup — no SDDM restart needed).
+
 ## 🤝 Credits
+
 
 - **Author:** [xCaptaiN09](https://github.com/xCaptaiN09)
 - **Design:** Inspired by Google Pixel and MD3.
