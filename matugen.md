@@ -1,0 +1,179 @@
+# 🎨 Wallpaper Sync & Matugen Color Theming
+
+Pixie SDDM runs as an unprivileged greeter process — it **cannot read your home
+directory**. The sync bridge copies your *actual desktop wallpaper* to a shared,
+world-readable location, generates a matching Material You palette from it with
+[Matugen](https://github.com/InioX/matugen), and hands both to the greeter via
+`theme.conf`.
+
+```
+Desktop wallpaper  ──┐
+                     │  scripts/update-wallpaper.sh            ┌──> theme.conf:
+Matugen (optional) ──┼─>  1. detect the active wallpaper       │      wallpaper=/var/lib/sddm/pixie/wallpaper.png
+                     │  2. copy -> shared assets dir           │      matugen=true
+                     │  3. matugen image -> template render    │      matugenAccent/background/text=#…
+                     │  4. merge rendered values into          │      (plus date/time format sync)
+                     │     theme.conf                          └──> next lock/login screen uses them
+```
+
+---
+
+## 1. Quick start
+
+```bash
+# Detect the current wallpaper and sync it (palette via Matugen if installed)
+sudo ./scripts/update-wallpaper.sh
+
+# Or pass a specific wallpaper (auto-detect is skipped)
+sudo ./scripts/update-wallpaper.sh ~/Pictures/mountain.png
+
+# Force a palette regeneration without changing the wallpaper
+sudo ./scripts/update-wallpaper.sh --force
+
+# Light-scheme palette
+sudo ./scripts/update-wallpaper.sh --mode light
+
+# Preview everything without writing anything
+./scripts/update-wallpaper.sh --dry-run
+
+# Unsync: clear the wallpaper key and disable the generated palette
+sudo ./scripts/update-wallpaper.sh --disable
+```
+
+Running without `sudo` works too — the script re-execs itself via sudo only
+when its writes would fail (first run needs it; afterwards it never asks
+unless `theme.conf` is still root-owned). To avoid privileges on the shared
+dir entirely:
+
+```bash
+sudo install -d -o "$USER" -m 755 /var/lib/sddm/pixie   # one-time
+# (theme.conf updates still need privileges in stock installs)
+```
+
+### Detection order (first hit wins)
+
+Your active wallpaper is found in this order, honoring `--mode` for
+dark/light-specific keys where possible:
+
+1. **User hook** — `~/.config/pixie-sddm/get-wallpaper.sh` (executable, prints
+   a single path). Yours, for anything not covered below.
+2. **Quickshell / illogical-impulse** state file
+   (`~/.local/state/quickshell/user/generated/wallpaper/path.txt`).
+3. **hyprpaper**, **swww** (Hyprland daemons)
+4. **gsettings** (GNOME, Cinnamon, MATE) — dark/light aware
+5. **KDE Plasma** (`plasma-org.kde.plasma.desktop-appletsrc`)
+6. **nitrogen**, **feh**, **Xfce**
+
+No match → the bundled `assets/background.jpg` keeps serving.
+
+---
+
+## 2. Automatic sync (recommended)
+
+`scripts/system/bootstrap.sh` installs everything for hands-free sync:
+
+| Piece | What it does |
+|---|---|
+| `/usr/local/bin/pixie-sddm-sync` | Root-owned fixed helper; resolves the invoking user via `$SUDO_USER` (never `$HOME` arguments), reads only that user's wallpaper state file, and hands a *fixed* option set to `update-wallpaper.sh` |
+| `/etc/sudoers.d/pixie-sddm-sync` | Grants passwordless sudo for **exactly that one command** (visudo-validated) |
+| `~/.config/systemd/user/pixie-sddm-sync.path` | Watches `~/.local/state/quickshell/user/generated/wallpaper/path.txt` |
+| `~/.config/systemd/user/pixie-sddm-sync.service` | Runs `sudo /usr/local/bin/pixie-sddm-sync` |
+
+Enable the watcher:
+
+```bash
+sudo /home/$USER/pixie-sddm/scripts/system/bootstrap.sh   # install/update everything
+systemctl --user enable --now pixie-sddm-sync.path
+```
+
+Every wallpaper change in your desktop shell is then picked up automatically:
+the greeter's wallpaper and palette refresh for the next login/lock screen.
+
+---
+
+## 3. What Matugen does
+
+With Matugen installed (and `PIXIE_DISABLE_MATUGEN` unset), the script renders
+a **template** against the wallpaper's palette and merges four keys into the
+installed `theme.conf`:
+
+| key | meaning |
+|---|---|
+| `matugen=true` | generated palette is active (takes priority over static colors) |
+| `matugenAccent=` | accent — usernames, borders, submit button, highlights |
+| `matugenBackground=` | card/panel base color (also drives blur brightness) |
+| `matugenText=` | primary text color |
+
+Palette priority inside the theme: **Matugen → static `accentColor` etc. →
+runtime `autoColor` extraction from the bitmap** — so every layer degrades
+gracefully instead of ever rendering wrong or blank colors.
+
+### The templates (shipped in `scripts/matugen/`)
+
+Installed next to the theme at `$THEME_DIR/scripts/matugen/`; pick per scheme:
+
+`pixie-dark.conf` — used by `--mode dark` (default):
+
+```
+# Pixie SDDM - Material You palette fragment (dark mode)
+# This is a Matugen template. It is rendered by `matugen` from the active
+# wallpaper and merged into the installed theme's theme.conf by
+# scripts/update-wallpaper.sh. Do not edit this file to change the login
+# screen colors - edit theme.conf (or disable Matugen entirely).
+matugen=true
+matugenAccent={{colors.primary.dark.hex}}
+matugenBackground={{colors.background.dark.hex}}
+matugenText={{colors.on_background.dark.hex}}
+```
+
+`pixie-light.conf` — used by `--mode light`:
+
+```
+# Pixie SDDM - Material You palette fragment (light mode)
+# This is a Matugen template. It is rendered by `matugen` from the active
+# wallpaper and merged into the installed theme's theme.conf by
+# scripts/update-wallpaper.sh. Do not edit this file to change the login
+# screen colors - edit theme.conf (or disable Matugen entirely).
+matugen=true
+matugenAccent={{colors.primary.light.hex}}
+matugenBackground={{colors.background.light.hex}}
+matugenText={{colors.on_background.light.hex}}
+```
+
+The greeter applies whatever `theme.conf` contains — the templates are only the
+*renderer input*. `matugen=false` (or `--disable`) stops the palette from being
+applied while keeping the last synced wallpaper.
+
+### Tuning without touching the templates
+
+```bash
+PIXIE_SCHEME="scheme-vibrant" sudo -E ./scripts/update-wallpaper.sh --force   # any matugen scheme-* value
+PIXIE_SOURCE_COLOR_INDEX=2 sudo -E ./scripts/update-wallpaper.sh --force     # another seed color from the image
+PIXIE_DISABLE_MATUGEN=1 ./scripts/update-wallpaper.sh                        # wallpaper only, keep old palette
+```
+
+---
+
+## 4. Bonus: time & date format sync
+
+The same sync pass mirrors your end4pc shell's clock settings into theme.conf
+when `~/.config/illogical-impulse/config.json` exists:
+
+- `time.format` → `use24HourClock` (24-hour unless the format contains `am/pm`)
+- `time.dateFormat` → `dateFormat` (e.g. `ddd, dd/MM` → "Sun, 25/10")
+
+It runs **even when the wallpaper itself is unchanged**, so changing your
+shell's date format syncs on the next trigger.
+
+---
+
+## 5. Troubleshooting
+
+| Symptom | Fix |
+|---|---|
+| Greeter still shows the old wallpaper | Reboot/switch once — the greeter reads `theme.conf` when shown; or run `--force` |
+| `Matugen not installed` | Install `matugen` (AUR/`cargo install matugen`), then `--force` |
+| Greeter shows fallback background | Synced file deleted/readable? `sddm` user needs read+execute on every path — the shared dir exists for this reason |
+| Dark palette on a light wallpaper | Run `--mode light` (detection is best-effort per source) |
+| Sync never triggers automatically | `systemctl --user status pixie-sddm-sync.path`; re-run bootstrap to reinstall the helper/sudoers |
+| Sudo prompts on every sync | Hand the shared dir to your user (§1); `theme.conf` remains root-owned by design in stock installs |

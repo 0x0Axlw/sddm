@@ -409,7 +409,7 @@ Edit `theme.conf` or replace assets in `assets/`:
 - **Dynamic Colors:**
   - `autoColor=true` (Default): Automatically extracts a Material You accent color from your wallpaper.
   - `autoColor=false`: Disables extraction and strictly uses the `accentColor` you set in `theme.conf`.
-  - `matugen=true` (after running the sync script): Uses the full Matugen-generated palette, taking priority over both.
+  - `matugen=true` (after running the sync script): Uses the full Matugen-generated palette, taking priority over both. See **[matugen.md](matugen.md)** for the full wallpaper + palette pipeline, shipped Matugen templates and automatic sync setup.
 - **Background Colors:** Change `backgroundColor` in `theme.conf`. The login card, input fields, and borders will automatically generate lighter variants to match.
 - **Clock Format:** Set `use24HourClock=false` in `theme.conf` to switch to a 12-hour clock, or `use24HourClock=true` for 24-hour.
 
@@ -438,6 +438,11 @@ Give every user their own profile picture on the login screen:
 - `theme.conf` gets an `avatar_<username>` key the greeter reads via its
   dynamic config map. Precedence per user: theme key → SDDM's icon role →
   bundled `assets/avatar.jpg` → initial-letter fallback.
+- **Portable:** no hardcoded paths — the script auto-detects the installed
+  theme dir (system, per-user local, or the repo checkout it lives in;
+  `PIXIE_THEME_DIR` / `PIXIE_ASSETS_DIR` override). With no system install it
+  uses *portable mode*: the avatar goes to the theme's own `assets/avatars/`
+  and a theme-relative key is written, so a fresh clone works out of the box.
 - The change takes effect the next time the lock/login screen is shown
   (the greeter reads `theme.conf` at startup — no SDDM restart needed).
 

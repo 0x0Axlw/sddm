@@ -28,10 +28,33 @@
 set -u -o pipefail
 
 # ----------------------------------------------------------------------------
-# Defaults (overridable for tests / Nix-like installs via env)
+# Defaults / auto-detection (overridable via env for Nix-like installs)
 # ----------------------------------------------------------------------------
-THEME_DIR="${PIXIE_THEME_DIR:-/usr/share/sddm/themes/pixie}"
-ASSETS_DIR="${PIXIE_ASSETS_DIR:-/var/lib/sddm/pixie}"
+export SELF="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd -P)/$(basename -- "${BASH_SOURCE[0]}")"
+
+# Theme dir: env override > first installed location we can find > the repo
+# this script lives in (portable/local-preview mode).
+if [ -z "${PIXIE_THEME_DIR:-}" ]; then
+    _repo_dir="$(dirname -- "$SELF")/.."
+    for _cand in /usr/share/sddm/themes/pixie /usr/share/sddm/themes/pixie-qt5 \
+                 /usr/local/share/sddm/themes/pixie \
+                 "$(getent passwd "${SUDO_USER:-$USER}" 2>/dev/null | cut -d: -f6)/.local/share/sddm/themes/pixie" \
+                 "$(cd -- "$_repo_dir" 2>/dev/null && pwd -P)"; do
+        if [ -f "$_cand/theme.conf" ]; then THEME_DIR="$_cand"; break; fi
+    done
+fi
+THEME_DIR="${PIXIE_THEME_DIR:-${THEME_DIR:-/usr/share/sddm/themes/pixie}}"
+
+# Assets dir: env override > the canonical shared dir when it (or its parent)
+# exists > the theme's own assets dir (portable mode: no writing to /var/lib).
+if [ -z "${PIXIE_ASSETS_DIR:-}" ]; then
+    if [ -d /var/lib/sddm/pixie ] || [ -d /var/lib/sddm ]; then
+        ASSETS_DIR="/var/lib/sddm/pixie"
+    else
+        ASSETS_DIR="${THEME_DIR}/assets"
+    fi
+fi
+ASSETS_DIR="${PIXIE_ASSETS_DIR:-$ASSETS_DIR}"
 AVATAR_DIR="${ASSETS_DIR}/avatars"
 THEME_CONF="${THEME_DIR}/theme.conf"
 AVATAR_MAX=512
@@ -55,7 +78,7 @@ needs_privileges() {
     [ "$(id -u)" -eq 0 ] && return 1
     if [ "${ACTION}" = "list" ]; then return 1; fi
     if [ -d "$ASSETS_DIR" ]; then [ -w "$ASSETS_DIR" ] || return 0
-    else [ -d "/var/lib/sddm" ] && [ -w "/var/lib/sddm" ] || return 0; fi
+    else [ -d "$(dirname -- "$ASSETS_DIR")" ] && [ -w "$(dirname -- "$ASSETS_DIR")" ] || return 0; fi
     [ -f "$THEME_CONF" ] && [ -w "$THEME_CONF" ] || return 0
     return 1
 }
@@ -183,19 +206,20 @@ do_install() {
 
     # ---- Ship it atomically: image first, then the theme.conf key ----
     mv -f -- "$tmp" "$dst"
-    set_key "$THEME_CONF" "$(avatar_key_of "$user")" "$dst"
-    ok "Avatar for '$user' installed: $dst"
-    ok "theme.conf: $(avatar_key_of "$user")=$dst (used on the next lock/login screen)."
-
-    if command -v magick >/dev/null 2>&1 || command -v identify >/dev/null 2>&1; then
-        local dims; dims="$( (command -v magick >/dev/null 2>&1 && magick identify -ping -format '%wx%h' -- "$dst" 2>/dev/null) || identify -ping -format '%wx%h' -- "$dst" 2>/dev/null)"
-        msg "Stored as ${dims} PNG; the greeter keeps the circular design layout."
+    # Portable mode (avatar inside the theme dir): record a theme-relative
+    # path so the key stays valid wherever the theme gets copied.
+    if [ "$ASSETS_DIR" = "$THEME_DIR/assets" ]; then
+        set_key "$THEME_CONF" "$(avatar_key_of "$user")" "assets/avatars/${user}.png"
+        ok "theme.conf: $(avatar_key_of "$user")=assets/avatars/${user}.png"
+    else
+        set_key "$THEME_CONF" "$(avatar_key_of "$user")" "$dst"
+        ok "theme.conf: $(avatar_key_of "$user")=$dst"
     fi
+    ok "Avatar for '$user' installed: $dst"
     msg "On the next lock/login screen the avatar replaces the bundled default."
 }
 
 main() {
-    export SELF="${BASH_SOURCE[0]}"
     ACTION="install"; AVATAR_USER=""; AVATAR_IMAGE=""; REMOVE_USER=""
 
     case "${1:-}" in
